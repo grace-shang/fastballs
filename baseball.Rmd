@@ -1,0 +1,93 @@
+---
+title: "fastballs"
+output: html_document
+date: "2024-06-14"
+---
+
+# Introduction
+
+This is the cleaned version of my regression analysis for my STA302 final project, as my old Markdown file had too much busy work. I will document my data and create graphs here for the sake of organization while writing my final report.
+
+We will work with two datasets: savant_data.csv, which contains the bulk of our working data courtesy of Major League Baseball's Statcast, and pitchbot.csv, which contains command data courtesy of Cameron Groove's Pitching Bot on Fangraphs.
+
+# Data Processing
+Let's begin by loading in the necessary libraries and cleaning our data.
+
+```{r, message = FALSE, warning = FALSE}
+# Libraries
+library(car)
+library(tidyverse)
+
+# Loading and cleaning data
+fb <- read_csv("savant_data.csv")
+fb <- fb %>% select(player_id, `downward movement w/ gravity (in)`, 
+                    `glove/arm-side movement (in)`, whiff_percent, `pitch (MPH)`,
+                    `spin (RPM)`, `vertical release pt (ft)`, `extension (ft)`)
+
+bot <- read_csv("botcmd.csv") %>% select(player_id, `botCmd FA`)
+
+# Merging and cleaning data
+fastballs <- merge(fb, bot, by = 'player_id')
+renamed_cols <- c('downwards_mvmt' = 'downward movement w/ gravity (in)',
+                  'side_mvmt' = 'glove/arm-side movement (in)',
+                  'speed' = 'pitch (MPH)',
+                  'spin' = 'spin (RPM)',
+                  'release_pt' = 'vertical release pt (ft)',
+                  'extension' = 'extension (ft)',
+                  'command' = 'botCmd FA')
+
+fastballs <- rename(fastballs, renamed_cols)
+```
+
+Now we will preview our data
+```{r}
+head(fastballs)
+```
+
+# Regression
+Now we will begin training different models. We will split our model 75-25 into training-validation data.
+
+```{r, message = FALSE}
+set.seed(1000)
+fastballs_training <- fastballs %>% sample_frac(size = 0.75)
+fastballs_testing <- anti_join(fastballs, fastballs_training)
+```
+
+## EDA
+(eda)
+
+```{r}
+summarize(fastballs_training, pitchers = n(), 
+          `min speed` = min(speed), `max speed` = max(speed),
+          `average speed` = mean(speed), `median speed` = median(speed), 
+          `sd speed` = sd(speed))
+```
+
+## Model Selection
+We will proceed by backwards elimination, so we will create our first model using every possible parameter.
+
+### Model 1
+```{r}
+reg_all <- lm(whiff_percent ~ speed + spin + downwards_mvmt + 
+              side_mvmt + release_pt + extension + command, 
+              data = fastballs_training)
+
+summary(reg_all)
+```
+
+Let's check the assumptions of normality, linearity, and constant variance:
+```{r pressure, echo=FALSE}
+par(mfrow = c(2,4))
+plot(reg_all)
+```
+Now let's also check multicollinearity by looking at the Variance Inflation Factor:
+```{r}
+vif(reg_all)
+```
+
+Based on the above, it appears like every assumption is satisfied, except potentially linearity and multicollinearity. The former we might address through a transformation. The latter, while indeed indicating some degree of multicollinearity (the first five predictors in particular, since they seem to be a notable degree larger than 1), is not necessary to address since the VIF $< 5$. 
+
+
+
+
+
