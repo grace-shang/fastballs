@@ -49,8 +49,9 @@ Now we will begin training different models. We will split our model 75-25 into 
 
 ```{r, message = FALSE}
 set.seed(1000)
-fastballs_training <- fastballs %>% sample_frac(size = 0.75)
+fastballs_training <- fastballs %>% sample_frac(size = 0.8)
 fastballs_testing <- anti_join(fastballs, fastballs_training)
+fastballs_training
 ```
 
 ## EDA
@@ -77,7 +78,7 @@ summary(reg_all)
 
 Let's check the assumptions of normality, linearity, and constant variance:
 ```{r pressure, echo=FALSE}
-par(mfrow = c(2,4))
+par(mfrow = c(2,2))
 plot(reg_all)
 ```
 Now let's also check multicollinearity by looking at the Variance Inflation Factor:
@@ -87,7 +88,64 @@ vif(reg_all)
 
 Based on the above, it appears like every assumption is satisfied, except potentially linearity and multicollinearity. The former we might address through a transformation. The latter, while indeed indicating some degree of multicollinearity (the first five predictors in particular, since they seem to be a notable degree larger than 1), is not necessary to address since the VIF $< 5$. 
 
+There are two possibilities for transformations:
+1. We use Box-Cox to decide on a power transformation.
+2. We use the arcsine variance stabilizing transformation, since our predicted value is a percentage. 
 
+Let's see how both perform. First, to decide on a power transformation:
+```{r}
+MASS::boxcox(reg_all)
+```
+Based on the Box-Cox plot, because $1$ is closeset to the Maximum Likelihood Estimator, no transformation seems necessary. Let's proceed with the arcsine transformation and see if it's any help.
 
+```{r}
+# Arcsine transformed response
+asine_whiff_percent <- asin(sqrt(fastballs_training$whiff_percent / 100))
 
+# Transformed sc regression
+asine_reg_all <- lm(asine_whiff_percent ~ speed + spin + downwards_mvmt + 
+                    side_mvmt + release_pt + extension + command, 
+                    data = fastballs_training)
+summary(asine_reg_all)
+
+par(mfrow = c(2,2))
+plot(asine_reg_all)
+plot(reg_all)
+```
+
+It actually looks a little worse. Either way, it looks like point 27, associated with Shane Bieber, is an outlier. Let's look at his standardized residual:
+
+```{r}
+rstandard(reg_all)[27]
+```
+At this range, whether or not we remove him seems to be a bit of a judgement call. Let's try removing him and see what happens.
+
+```{r}
+updated_fastballs_training <- fastballs_training %>%  filter(player_id != 669456) 
+updated_fastballs_training
+```
+
+```{r}
+reg_all_removed <- lm(whiff_percent ~ speed + spin + downwards_mvmt + 
+                      side_mvmt + release_pt + extension + command, 
+                      data = updated_fastballs_training)
+
+summary(reg_all_removed)
+par(mfrow = c(2,2))
+plot(reg_all_removed)
+
+# Arcsine version
+arcsine_reg_all_removed <- lm(asin(sqrt(updated_fastballs_training$whiff_percent / 100)) ~
+                              speed + spin + downwards_mvmt + side_mvmt + release_pt + 
+                              extension + command, data = updated_fastballs_training)
+summary(arcsine_reg_all_removed)
+
+par(mfrow = c(2,2))
+plot(arcsine_reg_all_removed)
+```
+Normality seems to look better in both cases, although it still seems like the non-transformed data looks best. Speed is no longer significant, and downwards movement and side movement have become more significant. Let's proceed with with the non-transformed data set with Bieber removed.
+
+```{r}
+
+```
 
