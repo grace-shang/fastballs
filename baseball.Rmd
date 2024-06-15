@@ -51,7 +51,6 @@ Now we will begin training different models. We will split our model 75-25 into 
 set.seed(1000)
 fastballs_training <- fastballs %>% sample_frac(size = 0.8)
 fastballs_validation <- anti_join(fastballs, fastballs_training)
-fastballs_training
 ```
 
 ## EDA
@@ -77,7 +76,7 @@ summary(reg_all)
 ```
 
 Let's check the assumptions of normality, linearity, and constant variance:
-```{r pressure, echo=FALSE}
+```{r, echo=FALSE}
 par(mfrow = c(1,2))
 plot(reg_all)
 
@@ -153,7 +152,6 @@ At this range, whether or not we remove him seems to be a bit of a judgement cal
 
 ```{r}
 updated_fastballs_training <- fastballs_training %>%  filter(player_id != 669456) 
-updated_fastballs_training
 ```
 
 ```{r}
@@ -210,7 +208,7 @@ anova(reg_all_removed, reg_sdsr)
 ```
 
 Since $p = 0.4534$, it looks like we are good to go. Let's recheck our assumptions:
-```{r pressure, echo=FALSE}
+```{r, echo=FALSE}
 par(mfrow = c(1,2))
 plot(reg_sdsr)
 
@@ -273,7 +271,7 @@ wls_reg_sdsr <- lm(whiff_percent ~ spin + downwards_mvmt + side_mvmt + release_p
 summary(wls_reg_sdsr)
 ```
 
-```{r pressure, echo=FALSE}
+```{r, echo=FALSE}
 # WLS version
 par(mfrow = c(1,2))
 plot(wls_reg_sdsr)
@@ -379,6 +377,25 @@ wls_reg_sdsr_val <- lm(whiff_percent ~ spin + downwards_mvmt + side_mvmt + relea
 
 summary(wls_reg_sdsr_val)
 plot(wls_reg_sdsr_val)
+
+par(mfrow = c(1,2))
+
+plot(wls_reg_sdsr_val$residuals ~ fastballs_validation$spin,
+     main = 'Spin',
+     xlab = 'Spin (RPM)', ylab = 'Residuals',
+     col = 'orange')
+plot(wls_reg_sdsr_val$residuals ~ fastballs_validation$downwards_mvmt,
+     main = 'Downwards Movement',
+     xlab = 'Downwards Movement (in)', ylab = 'Residuals',
+     col = 'goldenrod')
+plot(wls_reg_sdsr_val$residuals ~ fastballs_validation$side_mvmt,
+     main = 'Side Movement',
+     xlab = 'Side Movement (in)', ylab = 'Residuals',
+     col = 'darkseagreen')
+plot(wls_reg_sdsr_val$residuals ~ fastballs_validation$release_pt,
+     main = 'Release Point',
+     xlab = 'Release Point (ft)', ylab = 'Residuals',
+     col = 'cadetblue')
 # plot(reg_sdsr_validation)
 ```
 It looks like point 15 has high leverage in this dataset (Felix Bautista), and point 12 and 2 are very close as well (. There also appear to be quite a few meaningful deviations away from the normal distribution. In particular, point 17 (Alex Faedo) and 15 (Felix Bautista) seem to be pretty far.
@@ -390,22 +407,22 @@ models = c('Training', 'Validation')
 n = c(119, 30)
 
 adj_r_squared = c(summary(wls_reg_sdsr)$adj.r.squared,
-                  summary(reg_sdsr_validation)$adj.r.squared)
+                  summary(wls_reg_sdsr_val)$adj.r.squared)
 
 intercept_estimate <- c(wls_reg_sdsr$coefficients[1],
-                        reg_sdsr_validation$coefficients[1])
+                        wls_reg_sdsr_val$coefficients[1])
 
 spin_estimate <- c(wls_reg_sdsr$coefficients[2],
-                        reg_sdsr_validation$coefficients[2])
+                        wls_reg_sdsr_val$coefficients[2])
 
 downwards_mvmt_estimate <- c(wls_reg_sdsr$coefficients[3],
-                        reg_sdsr_validation$coefficients[3])
+                        wls_reg_sdsr_val$coefficients[3])
 
 side_mvmt_estimate <- c(wls_reg_sdsr$coefficients[4],
-                        reg_sdsr_validation$coefficients[4])
+                        wls_reg_sdsr_val$coefficients[4])
 
 release_pt_estimate <- c(wls_reg_sdsr$coefficients[5],
-                        reg_sdsr_validation$coefficients[5])
+                        wls_reg_sdsr_val$coefficients[5])
 
 validation <- tibble(models, n, adj_r_squared, spin_estimate, downwards_mvmt_estimate,
                     side_mvmt_estimate, release_pt_estimate)
@@ -422,16 +439,16 @@ Let's take a look at the training dataset:
 
 ```{r}
 summarize(fastballs_validation, pitchers = n(), 
-          `min speed` = min(speed), `max speed` = max(speed),
-          `average speed` = mean(speed), `median speed` = median(speed), 
-          `sd speed` = sd(speed))
+          `min whiff` = min(whiff_percent), `max whiff` = max(whiff_percent),
+          `average whiff` = mean(whiff_percent), `median whiff` = median(whiff_percent), 
+          `sd whiff` = sd(whiff_percent))
 ```
 
 ```{r}
 summarize(updated_fastballs_training, pitchers = n(), 
-          `min speed` = min(speed), `max speed` = max(speed),
-          `average speed` = mean(speed), `median speed` = median(speed), 
-          `sd speed` = sd(speed))
+          `min whiff` = min(whiff_percent), `max whiff` = max(whiff_percent),
+          `average whiff` = mean(whiff_percent), `median whiff` = median(whiff_percent), 
+          `sd whiff` = sd(whiff_percent))
 ```
 
 Let's also look at the number of total fastballs thrown by each group.
