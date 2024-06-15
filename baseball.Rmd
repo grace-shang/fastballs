@@ -20,7 +20,7 @@ library(tidyverse)
 
 # Loading and cleaning data
 fb <- read_csv("savant_data.csv")
-fb <- fb %>% select(player_id, `downward movement w/ gravity (in)`, 
+fb <- fb %>% select(player_id, total, `downward movement w/ gravity (in)`, 
                     `glove/arm-side movement (in)`, whiff_percent, `pitch (MPH)`,
                     `spin (RPM)`, `vertical release pt (ft)`, `extension (ft)`)
 
@@ -50,7 +50,7 @@ Now we will begin training different models. We will split our model 75-25 into 
 ```{r, message = FALSE}
 set.seed(1000)
 fastballs_training <- fastballs %>% sample_frac(size = 0.8)
-fastballs_testing <- anti_join(fastballs, fastballs_training)
+fastballs_validation <- anti_join(fastballs, fastballs_training)
 fastballs_training
 ```
 
@@ -178,7 +178,24 @@ plot(arcsine_reg_all_removed)
 ```
 Normality seems to look better in both cases, although it still seems like the non-transformed data looks best. Speed is no longer significant, and downwards movement and side movement have become more significant. Let's proceed with with the non-transformed data set with Bieber removed.
 
-### Model 2
+### Model 2.1, 2.2
+
+The least significant of the previous ones was side movement. Let's try removing that.
+```{r}
+reg_sdr <- lm(whiff_percent ~ spin + downwards_mvmt + release_pt, 
+              data = updated_fastballs_training)
+
+summary(reg_sdr)
+```
+
+Was this okay? Let's validate with the partial $F$ test.
+
+```{r}
+anova(reg_all_removed, reg_sdr)
+```
+It looks like even this was significant, so no, we cannot proceed.
+
+Let's try removing everything then.
 
 ```{r}
 reg_sdsr <- lm(whiff_percent ~ spin + downwards_mvmt + side_mvmt + 
@@ -257,6 +274,7 @@ summary(wls_reg_sdsr)
 ```
 
 ```{r pressure, echo=FALSE}
+# WLS version
 par(mfrow = c(1,2))
 plot(wls_reg_sdsr)
 
@@ -285,4 +303,143 @@ vif(wls_reg_sdsr)
 ```
 
 Which appears to still be fine.
+
+
+### Models 3 & 4 (?)
+Can we go simpler? Let's pick the two most significant parameters.
+```{r}
+reg_dr <- lm(whiff_percent ~ downwards_mvmt + release_pt,
+                data = updated_fastballs_training)
+summary(reg_dr)
+```
+Now let's conduct a partial F test to see if this was okay.
+
+```{r}
+anova(wls_reg_sdsr, reg_dr)
+```
+Which is very significant, so it appears like at least one of spin and side movement was significant. Let's take them up individually.
+
+```{r}
+reg_sdr <- lm(whiff_percent ~ spin + downwards_mvmt + release_pt,
+                data = updated_fastballs_training)
+summary(reg_sdr)
+```
+
+```{r}
+anova(wls_reg_sdsr, reg_sdr)
+```
+So side movement was important. What about if we remove spin?
+
+```{r}
+reg_dsr <- lm(whiff_percent ~ downwards_mvmt + side_mvmt + release_pt,
+                data = updated_fastballs_training)
+summary(reg_dsr)
+```
+
+```{r}
+anova(wls_reg_sdsr, reg_sdr)
+```
+
+Which is also significant. So it seems like we cannot go simpler.
+
+# Selecting a model
+
+Let's now compare our original model to our simplified model. We will use corrected AIC (since $n = 119$, $p \geq 4$, so $\frac{n}{K} = \frac{119}{4 + 2} \leq 40$), BIC, and adjusted $R^2$ to decide.
+```{r}
+models = c('All', 'Speed + Downwards Movement + Sideways Movement + Release Point')
+
+n_predictors = c(7, 4)
+
+adj_r_squared = c(summary(reg_all_removed)$adj.r.squared,
+              summary(wls_reg_sdsr)$adj.r.squared)
+
+bic = c(BIC(reg_all_removed), 
+        BIC(wls_reg_sdsr))
+
+aic_corrected = c(AIC(reg_all_removed) + (2*9*10)/(119-9+1), 
+                AIC(wls_reg_sdsr) + (2*6*7)/(103-6+1))
+
+selection <- tibble(models, n_predictors, adj_r_squared, aic_corrected, bic)
+selection
+```
+
+So by all counts, our second model is better. We'll pick that one to move onto our final step: Validation.
+
+# Model Validation
+```{r}
+reg_sdsr_validation <- lm(whiff_percent ~ spin + downwards_mvmt + side_mvmt + release_pt,
+                          data = fastballs_validation)
+
+# summary(reg_sdsr_validation)
+
+weights_val <- 1 / lm(abs(reg_sdsr_validation$residuals) ~ reg_sdsr_validation$fitted.values)$fitted.values^2
+
+wls_reg_sdsr_val <- lm(whiff_percent ~ spin + downwards_mvmt + side_mvmt + release_pt,
+                data = fastballs_validation, weights = weights_val)
+
+summary(wls_reg_sdsr_val)
+plot(wls_reg_sdsr_val)
+# plot(reg_sdsr_validation)
+```
+It looks like point 15 has high leverage in this dataset (Felix Bautista), and point 12 and 2 are very close as well (. There also appear to be quite a few meaningful deviations away from the normal distribution. In particular, point 17 (Alex Faedo) and 15 (Felix Bautista) seem to be pretty far.
+
+Let's compare with our test regression:
+```{r}
+models = c('Training', 'Validation')
+
+n = c(119, 30)
+
+adj_r_squared = c(summary(wls_reg_sdsr)$adj.r.squared,
+                  summary(reg_sdsr_validation)$adj.r.squared)
+
+intercept_estimate <- c(wls_reg_sdsr$coefficients[1],
+                        reg_sdsr_validation$coefficients[1])
+
+spin_estimate <- c(wls_reg_sdsr$coefficients[2],
+                        reg_sdsr_validation$coefficients[2])
+
+downwards_mvmt_estimate <- c(wls_reg_sdsr$coefficients[3],
+                        reg_sdsr_validation$coefficients[3])
+
+side_mvmt_estimate <- c(wls_reg_sdsr$coefficients[4],
+                        reg_sdsr_validation$coefficients[4])
+
+release_pt_estimate <- c(wls_reg_sdsr$coefficients[5],
+                        reg_sdsr_validation$coefficients[5])
+
+validation <- tibble(models, n, adj_r_squared, spin_estimate, downwards_mvmt_estimate,
+                    side_mvmt_estimate, release_pt_estimate)
+validation
+```
+
+So besides the spin estimate, they really aren't too similar. Let's also check that there's no multicollinearity, since that's never been an issue.
+
+```{r}
+vif(wls_reg_sdsr_val)
+```
+
+Let's take a look at the training dataset:
+
+```{r}
+summarize(fastballs_validation, pitchers = n(), 
+          `min speed` = min(speed), `max speed` = max(speed),
+          `average speed` = mean(speed), `median speed` = median(speed), 
+          `sd speed` = sd(speed))
+```
+
+```{r}
+summarize(updated_fastballs_training, pitchers = n(), 
+          `min speed` = min(speed), `max speed` = max(speed),
+          `average speed` = mean(speed), `median speed` = median(speed), 
+          `sd speed` = sd(speed))
+```
+
+Let's also look at the number of total fastballs thrown by each group.
+```{r}
+mean(updated_fastballs_training$total)
+mean(fastballs_validation$total)
+```
+
+Looks like the second group, on average, threw 100 less fastballs than the first. This might explain some of the deviations.
+
 
